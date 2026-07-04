@@ -37,6 +37,30 @@ def test_tweets_from_json_accepts_structured_success_envelope(tweet_factory) -> 
     assert [tweet.id for tweet in restored] == ["1"]
 
 
+def test_tweets_from_json_accepts_xquik_jsonl_export() -> None:
+    raw = (
+        '{"tweet_id":"101","fullText":"Xquik source row","created_at":"2026-07-04T10:00:00Z",'
+        '"author":{"username":"xquik","name":"Xquik"},"like_count":7,"retweet_count":2}\n'
+        '{"id":"102","text":"Second row","createdAtIso":"2026-07-04T11:00:00Z",'
+        '"username":"fallback","metrics":{"likes":3,"replies":1}}\n'
+    )
+
+    restored = tweets_from_json(raw)
+
+    assert [tweet.id for tweet in restored] == ["101", "102"]
+    assert restored[0].author.screen_name == "xquik"
+    assert restored[0].metrics.likes == 7
+    assert restored[0].metrics.retweets == 2
+    assert restored[1].created_at == "2026-07-04T11:00:00Z"
+
+
+def test_tweets_from_json_rejects_empty_input() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="empty"):
+        tweets_from_json(" \n")
+
+
 def test_compact_serialization(tweet_factory) -> None:
     from twitter_cli.serialization import tweet_to_compact_dict, tweets_to_compact_json
     import json
