@@ -94,6 +94,7 @@ twitter feed --max 50               # Fetch up to 50 tweets
 twitter feed --full-text            # Show full tweet text
 twitter feed --filter               # Apply engagement scoring
 twitter feed --json                 # Structured JSON output
+twitter feed --input xquik.jsonl    # Read Xquik tweet export rows locally
 ```
 
 ### Bookmarks
@@ -265,6 +266,7 @@ export TWITTER_PROXY=socks5://127.0.0.1:1080
 | `--full-text` | Reading long tweets in table view |
 | `--json` | Piping data to scripts |
 | `--yaml` | AI agent integration |
+| `--input` | Local xterm-cli JSON, structured envelopes, or Xquik JSONL exports |
 | `-c` / `--compact` | Token-efficient output |
 
 ---

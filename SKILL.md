@@ -109,10 +109,12 @@ Non-TTY stdout defaults to YAML automatically. Use `OUTPUT=yaml|json|rich|auto` 
 ```bash
 twitter feed --yaml
 twitter feed --json | jq '.[0].text'
+twitter feed --input xquik.jsonl --yaml
 ```
 
 All machine-readable output uses the envelope documented in [SCHEMA.md](./SCHEMA.md).
 Tweet and user payloads now live under `.data`.
+The `--input` feed path accepts xterm-cli JSON, structured envelopes, and Xquik JSONL tweet exports for offline analysis.
 
 ### Full text: `--full-text` flag (rich tables only)
 

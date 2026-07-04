@@ -64,6 +64,7 @@ def tweet_to_dict(tweet: Tweet) -> Dict[str, Any]:
 
 def tweet_from_dict(data: Dict[str, Any]) -> Tweet:
     """Convert a dict into a Tweet dataclass."""
+    data = _normalize_tweet_payload(data)
     author_data = data.get("author") or {}
     metrics_data = data.get("metrics") or {}
     media_data = data.get("media") or []
@@ -126,9 +127,13 @@ def tweet_from_dict(data: Dict[str, Any]) -> Tweet:
 
 def tweets_from_json(raw: str) -> List[Tweet]:
     """Parse a JSON string into Tweet objects."""
+    raw = raw.strip()
+    if not raw:
+        raise ValueError("Tweet JSON payload is empty")
+    if _looks_like_jsonl(raw):
+        return [tweet_from_dict(item) for item in _jsonl_records(raw)]
     payload = json.loads(raw)
-    if isinstance(payload, dict) and payload.get("ok") is True and isinstance(payload.get("data"), list):
-        payload = payload["data"]
+    payload = _unwrap_tweet_collection(payload)
     if not isinstance(payload, list):
         raise ValueError("Tweet JSON payload must be a list")
     return [tweet_from_dict(item) for item in payload if isinstance(item, dict)]
@@ -205,6 +210,112 @@ def users_to_json(users: Iterable[UserProfile]) -> str:
 def users_to_data(users: Iterable[UserProfile]) -> List[Dict[str, Any]]:
     """Serialize UserProfile objects to Python dicts."""
     return [user_profile_to_dict(user) for user in users]
+
+
+def _looks_like_jsonl(raw: str) -> bool:
+    """Return True when input is newline-delimited JSON records."""
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    return len(lines) > 1 and all(line.startswith("{") for line in lines)
+
+
+def _jsonl_records(raw: str) -> List[Dict[str, Any]]:
+    """Parse JSONL records and keep dict-like tweet entries."""
+    records = []
+    for line_number, line in enumerate(raw.splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid JSONL tweet record on line %s: %s" % (line_number, exc))
+        unwrapped = _unwrap_tweet_collection(payload)
+        if isinstance(unwrapped, list):
+            records.extend(item for item in unwrapped if isinstance(item, dict))
+        elif isinstance(unwrapped, dict):
+            records.append(unwrapped)
+    return records
+
+
+def _unwrap_tweet_collection(payload: Any) -> Any:
+    """Unwrap common tweet export envelopes."""
+    if not isinstance(payload, dict):
+        return payload
+    for key in ("data", "tweets", "items", "results"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    tweet = payload.get("tweet")
+    if isinstance(tweet, dict):
+        return tweet
+    return payload
+
+
+def _normalize_tweet_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize xterm-cli and Xquik tweet export fields to one shape."""
+    if "author" in data and "metrics" in data and "createdAt" in data:
+        return data
+
+    author_data = data.get("author") if isinstance(data.get("author"), dict) else {}
+    user_data = data.get("user") if isinstance(data.get("user"), dict) else {}
+    author = author_data or user_data
+    author_lookup = dict(data)
+    author_lookup.update(author)
+    metrics = data.get("metrics") if isinstance(data.get("metrics"), dict) else {}
+
+    normalized = dict(data)
+    normalized["id"] = _first_value(data, "id", "tweet_id", "tweetId", "tweetID")
+    normalized["text"] = _first_value(data, "text", "full_text", "fullText", "content", "body")
+    normalized["createdAt"] = _first_value(
+        data,
+        "createdAt",
+        "created_at",
+        "createdAtIso",
+        "created_at_iso",
+        "timestamp",
+    )
+    normalized["lang"] = _first_value(data, "lang", "language")
+    normalized["author"] = {
+        "id": _first_value(author_lookup, "author_id", "authorId", "user_id", "userId", "id"),
+        "name": _first_value(author_lookup, "name", "display_name", "displayName", "username"),
+        "screenName": _first_value(
+            author_lookup,
+            "screenName",
+            "screen_name",
+            "username",
+            "handle",
+            "userName",
+        ),
+        "profileImageUrl": _first_value(author_lookup, "profileImageUrl", "profile_image_url", "avatar_url"),
+        "verified": bool(author_lookup.get("verified", False)),
+    }
+    normalized["metrics"] = {
+        "likes": _metric_value(data, metrics, "likes", "like_count", "likeCount"),
+        "retweets": _metric_value(data, metrics, "retweets", "retweet_count", "retweetCount"),
+        "replies": _metric_value(data, metrics, "replies", "reply_count", "replyCount"),
+        "quotes": _metric_value(data, metrics, "quotes", "quote_count", "quoteCount"),
+        "views": _metric_value(data, metrics, "views", "view_count", "viewCount", "impression_count"),
+        "bookmarks": _metric_value(data, metrics, "bookmarks", "bookmark_count", "bookmarkCount"),
+    }
+    return normalized
+
+
+def _first_value(data: Dict[str, Any], *keys: str) -> Any:
+    """Return the first present, non-empty value for a key list."""
+    for key in keys:
+        value = data.get(key)
+        if value is not None and value != "":
+            return value
+    return ""
+
+
+def _metric_value(data: Dict[str, Any], metrics: Dict[str, Any], *keys: str) -> int:
+    """Read a metric from nested or flat tweet export fields."""
+    for key in keys:
+        value = metrics.get(key, data.get(key))
+        if value is not None:
+            return int(value or 0)
+    return 0
 
 
 def _optional_int(value: Any) -> Optional[int]:
